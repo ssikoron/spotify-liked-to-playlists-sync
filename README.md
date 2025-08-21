@@ -51,6 +51,15 @@ playlists.
    REBUILD_GENRE_PROFILE_INTERVAL=24
    ```
 
+   You can also control paths via environment variables:
+   - CONFIG_PATH: absolute or relative path to config.json (default: ./config.json)
+   - DATA_DIR: directory for app data such as state and cached profiles (default: ./.data)
+   Examples:
+   ```
+   CONFIG_PATH=/etc/spotify-liked/config.json
+   DATA_DIR=/var/lib/spotify-liked
+   ```
+
 4. Get your Spotify refresh token and have it saved into `config.json` automatically:
    ```bash
    pnpm auth

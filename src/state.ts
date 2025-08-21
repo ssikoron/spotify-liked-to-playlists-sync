@@ -1,7 +1,9 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 
-const STATE_PATH = path.resolve(".data/state.json");
+// Allow overriding data directory via env var DATA_DIR
+const DATA_DIR = path.resolve(process.env.DATA_DIR || ".data");
+const STATE_PATH = path.join(DATA_DIR, "state.json");
 
 export type State = {
   lastProcessedAddedAt?: string;

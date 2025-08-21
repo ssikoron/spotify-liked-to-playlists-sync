@@ -1,7 +1,9 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 
-const CACHE_PATH = path.resolve(".data/playlistProfiles.json");
+// Allow overriding data directory via env var DATA_DIR
+const DATA_DIR = path.resolve(process.env.DATA_DIR || ".data");
+const CACHE_PATH = path.join(DATA_DIR, "playlistProfiles.json");
 
 export type CachedProfile = {
   playlistId: string;

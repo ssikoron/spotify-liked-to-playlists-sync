@@ -39,7 +39,7 @@ function extractPlaylistId(raw: string): string | null {
 }
 
 async function getTargetPlaylistIdsFromConfig(): Promise<string[]> {
-  const configPath = path.resolve("config.json");
+  const configPath = path.resolve(process.env.CONFIG_PATH || "config.json");
   try {
     const buf = await fs.readFile(configPath, "utf8");
     const cfg = JSON.parse(buf);

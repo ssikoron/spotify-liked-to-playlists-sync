@@ -13,7 +13,8 @@ export type AppConfig = {
   };
 };
 
-const CONFIG_PATH = path.resolve("config.json");
+// Allow overriding config.json location via env var CONFIG_PATH
+const CONFIG_PATH = path.resolve(process.env.CONFIG_PATH || "config.json");
 const DOTENV_PATH = path.resolve(".env");
 
 async function migrateFromDotEnvIfPossible(): Promise<AppConfig | null> {
@@ -48,6 +49,8 @@ async function migrateFromDotEnvIfPossible(): Promise<AppConfig | null> {
     // If nothing meaningful found, do not create config.json
     if (!cfg.spotify && !cfg.targetPlaylists) return null;
 
+    // Ensure parent directory exists before writing custom path
+    await fs.mkdir(path.dirname(CONFIG_PATH), { recursive: true });
     await fs.writeFile(CONFIG_PATH, JSON.stringify(cfg, null, 2));
     console.log(`Created ${CONFIG_PATH} from existing .env values.`);
     return cfg;
@@ -131,6 +134,8 @@ export async function saveSpotifyRefreshToken(refreshToken: string): Promise<voi
       refreshToken,
     },
   };
+  // Ensure parent directory exists before writing
+  await fs.mkdir(path.dirname(CONFIG_PATH), { recursive: true });
   await fs.writeFile(CONFIG_PATH, JSON.stringify(updated, null, 2));
   console.log(`Saved refresh token to ${CONFIG_PATH} under spotify.refreshToken`);
 }
