@@ -1,21 +1,11 @@
 /**
  * Helper for retrieving access and refresh tokens from Spotify
  */
-import "dotenv/config";
 import http from "node:http";
 import { URL } from "node:url";
 import crypto from "node:crypto";
 import SpotifyWebApi from "spotify-web-api-node";
-
-const {
-  SPOTIFY_CLIENT_ID,
-  SPOTIFY_CLIENT_SECRET,
-  SPOTIFY_REDIRECT_URI = "http://localhost:3000/callback",
-} = process.env;
-
-if (!SPOTIFY_CLIENT_ID || !SPOTIFY_CLIENT_SECRET) {
-  throw new Error("Missing SPOTIFY_CLIENT_ID or SPOTIFY_CLIENT_SECRET in .env");
-}
+import { getSpotifyConfigForAuth, saveSpotifyRefreshToken } from "./config";
 
 const scopes = [
   "user-library-read",
@@ -24,10 +14,12 @@ const scopes = [
   "playlist-read-private",
 ];
 
+const { clientId, clientSecret, redirectUri } = await getSpotifyConfigForAuth();
+
 const spotify = new SpotifyWebApi({
-  clientId: SPOTIFY_CLIENT_ID,
-  clientSecret: SPOTIFY_CLIENT_SECRET,
-  redirectUri: SPOTIFY_REDIRECT_URI,
+  clientId,
+  clientSecret,
+  redirectUri,
 });
 
 const state = crypto.randomBytes(16).toString("hex");
@@ -39,7 +31,7 @@ console.log(authUrl, "\n");
 const server = http.createServer(async (req, res) => {
   try {
     if (!req.url) return;
-    const url = new URL(req.url, SPOTIFY_REDIRECT_URI);
+    const url = new URL(req.url, redirectUri);
 
     if (url.pathname !== "/callback") {
       res.statusCode = 404;
@@ -61,10 +53,20 @@ const server = http.createServer(async (req, res) => {
     const refreshToken = data.body.refresh_token;
     const expiresIn = data.body.expires_in;
 
+    // Persist refresh token to config.json
+    if (refreshToken) {
+      await saveSpotifyRefreshToken(refreshToken);
+    }
+
     console.log("\n=== AUTH SUCCESS ===");
     console.log("Access token (expires in seconds):", expiresIn);
-    console.log("Refresh token (save this in .env):");
-    console.log(refreshToken);
+    if (!refreshToken) {
+      console.log(
+        "No refresh token returned. If you re-authorized too quickly, try revoking the app in Spotify and retry.",
+      );
+    } else {
+      console.log("Refresh token saved to config.json.");
+    }
     console.log("====================\n");
 
     res.statusCode = 200;

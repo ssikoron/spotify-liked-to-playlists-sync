@@ -30,23 +30,32 @@ playlists.
    pnpm install
    ```
 
-3. Create a `.env` file in the project root with the following variables:
+3. Create a `config.json` file in the project root with your Spotify credentials and playlists. You can put bare playlist IDs, full URLs, or Spotify URIs; they will be normalized automatically:
+   ```json
+   {
+     "spotify": {
+       "clientId": "your_client_id",
+       "clientSecret": "your_client_secret",
+       "redirectUri": "http://localhost:3000/callback"
+     },
+     "targetPlaylists": [
+       "37i9dQZF1DXcBWIGoYBM5M",
+       "https://open.spotify.com/playlist/6UeSakyzhiEt4NB3UAd6NQ",
+       "spotify:playlist:3AGOiaoRXMSjswCLtuNqv5"
+     ]
+   }
    ```
-   SPOTIFY_CLIENT_ID=your_client_id
-   SPOTIFY_CLIENT_SECRET=your_client_secret
-   SPOTIFY_REFRESH_TOKEN=your_refresh_token  # You'll get this in the next step
 
-   TARGET_PLAYLIST_IDS=playlist_id1,playlist_id2
-   
-   # Optional: How often to rebuild genre profiles (in hours, default: 24)
+   Optionally, you can control how often genre profiles are rebuilt via an environment variable:
+   ```
    REBUILD_GENRE_PROFILE_INTERVAL=24
    ```
 
-4. Get your Spotify refresh token:
+4. Get your Spotify refresh token and have it saved into `config.json` automatically:
    ```bash
    pnpm auth
    ```
-   Follow the instructions in the terminal to authorize the application. Add this refresh token to the `.env` file.
+   Follow the instructions in the terminal to authorize the application. When completed, the `refreshToken` will be written under `spotify.refreshToken` in your `config.json`.
 
 ### Spotify Developer Setup
 
@@ -68,22 +77,7 @@ pnpm build
 pnpm start
 ```
 
-### Docker Deployment
-
-```bash
-# Build the Docker image
-docker build -t spotify-liked-to-playlists-sync .
-
-# Run the container
-docker run -d \
-  --name spotify-sync \
-  -v ./data:/app/.data \
-  -e SPOTIFY_CLIENT_ID=your_client_id \
-  -e SPOTIFY_CLIENT_SECRET=your_client_secret \
-  -e SPOTIFY_REFRESH_TOKEN=your_refresh_token \
-  -e TARGET_PLAYLIST_IDS=playlist_id1,playlist_id2 \
-  spotify-liked-to-playlists-sync
-```
+(Docker usage has been removed; run directly with Node as shown above.)
 
 ## How to Find Playlist IDs
 

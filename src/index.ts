@@ -1,15 +1,18 @@
 import "dotenv/config";
+import { promises as fs } from "node:fs";
+import path from "node:path";
 import {
   iterateSavedTracks,
   getSeveralArtists,
   addTracksToPlaylistIfMissing,
-} from "./spotify.js";
-import { readState, writeState } from "./state.js";
+  initSpotify,
+} from "./spotify";
+import { readState, writeState } from "./state";
 import {
   buildPlaylistGenreProfile,
   pickBestPlaylist,
   scoreTrackAgainstProfile,
-} from "./genreRouter.js";
+} from "./genreRouter";
 
 // Rebluild genre profiles every 24 hours by default
 const REBUILD_GENRE_PROFILE_INTERVAL = process.env
@@ -35,22 +38,30 @@ function extractPlaylistId(raw: string): string | null {
   return null;
 }
 
-function getTargetPlaylistIds(): string[] {
-  const out: string[] = [];
-  const push = (v?: string) => {
-    if (!v) return;
-    const id = extractPlaylistId(v);
-    if (id) out.push(id);
-    else console.warn("Skipping unrecognized playlist value:", v);
-  };
-
-  if (process.env.TARGET_PLAYLIST_IDS) {
-    for (const part of process.env.TARGET_PLAYLIST_IDS.split(",")) push(part);
+async function getTargetPlaylistIdsFromConfig(): Promise<string[]> {
+  const configPath = path.resolve("config.json");
+  try {
+    const buf = await fs.readFile(configPath, "utf8");
+    const cfg = JSON.parse(buf);
+    const rawList: unknown = cfg?.targetPlaylists ?? cfg?.playlists;
+    if (!Array.isArray(rawList)) {
+      throw new Error(
+        `config.json must contain array property targetPlaylists (or playlists)`,
+      );
+    }
+    const out: string[] = [];
+    for (const v of rawList) {
+      if (typeof v !== "string") continue;
+      const id = extractPlaylistId(v);
+      if (id) out.push(id);
+      else console.warn("Skipping unrecognized playlist value:", v);
+    }
+    return Array.from(new Set(out));
+  } catch (e: any) {
+    throw new Error(
+      `Failed to read playlists from config.json at ${configPath}: ${e?.message ?? e}`,
+    );
   }
-  for (const [k, v] of Object.entries(process.env)) {
-    if (k.startsWith("TARGET_PLAYLIST_ID_")) push(v);
-  }
-  return Array.from(new Set(out));
 }
 
 /**
@@ -69,6 +80,7 @@ function shouldRebuildProfile(lastRebuildTime: string | undefined): boolean {
 }
 
 async function main() {
+  await initSpotify();
   const state = await readState();
   if (!state.lastProfileRebuildTime) {
     state.lastProfileRebuildTime = {};
@@ -87,10 +99,10 @@ async function main() {
     return;
   }
 
-  const targetPlaylists = getTargetPlaylistIds();
+  const targetPlaylists = await getTargetPlaylistIdsFromConfig();
   if (targetPlaylists.length === 0) {
     throw new Error(
-      "Configure at least one TARGET_PLAYLIST_ID_* or TARGET_PLAYLIST_IDS in .env",
+      "Provide at least one playlist in config.json under targetPlaylists.",
     );
   }
 

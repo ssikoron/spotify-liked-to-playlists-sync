@@ -5,8 +5,8 @@ import {
   iteratePlaylistTracks,
   getSeveralArtists,
   getPlaylistSnapshot,
-} from "./spotify.js";
-import { getCachedProfile, putCachedProfile } from "./cache.js";
+} from "./spotify";
+import { getCachedProfile, putCachedProfile } from "./cache";
 
 export type GenreProfile = Map<string, number>;
 

@@ -1,27 +1,35 @@
-import "dotenv/config";
 import SpotifyWebApi from "spotify-web-api-node";
 import { setTimeout as sleep } from "node:timers/promises";
+import { getSpotifyConfig } from "./config";
 
-const {
-  SPOTIFY_CLIENT_ID,
-  SPOTIFY_CLIENT_SECRET,
-  SPOTIFY_REFRESH_TOKEN,
-  SPOTIFY_REDIRECT_URI = "http://localhost:3000/callback",
-} = process.env;
+let _spotifyInstance: SpotifyWebApi | null = null;
 
-
-if (!SPOTIFY_CLIENT_ID || !SPOTIFY_CLIENT_SECRET || !SPOTIFY_REFRESH_TOKEN) {
-  throw new Error("Missing Spotify credentials in .env");
+function getSpotify(): SpotifyWebApi {
+  if (_spotifyInstance) return _spotifyInstance;
+  throw new Error("Spotify API not initialized. Call initSpotify() first.");
 }
 
+export async function initSpotify() {
+  const { clientId, clientSecret, refreshToken, redirectUri } =
+    await getSpotifyConfig();
+  _spotifyInstance = new SpotifyWebApi({
+    clientId,
+    clientSecret,
+    redirectUri,
+  });
+  _spotifyInstance.setRefreshToken(refreshToken);
+}
 
-export const spotify = new SpotifyWebApi({
-  clientId: SPOTIFY_CLIENT_ID,
-  clientSecret: SPOTIFY_CLIENT_SECRET,
-  redirectUri: SPOTIFY_REDIRECT_URI,
-});
-
-spotify.setRefreshToken(SPOTIFY_REFRESH_TOKEN);
+const spotify = {
+  getAccessToken: () => getSpotify().getAccessToken(),
+  setAccessToken: (t: string) => getSpotify().setAccessToken(t),
+  refreshAccessToken: () => getSpotify().refreshAccessToken(),
+  getMySavedTracks: (opts: any) => getSpotify().getMySavedTracks(opts),
+  getPlaylistTracks: (id: string, opts: any) => getSpotify().getPlaylistTracks(id, opts),
+  getArtists: (ids: string[]) => getSpotify().getArtists(ids),
+  addTracksToPlaylist: (id: string, uris: string[]) => getSpotify().addTracksToPlaylist(id, uris),
+  getPlaylist: (id: string, opts: any) => getSpotify().getPlaylist(id, opts),
+};
 
 async function ensureAccessToken() {
   const token = spotify.getAccessToken();

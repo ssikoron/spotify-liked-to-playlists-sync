@@ -9,3 +9,5 @@ dist
 .env.*
 
 .data
+
+config.json
