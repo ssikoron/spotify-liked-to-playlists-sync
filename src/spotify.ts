@@ -154,7 +154,7 @@ export async function addTracksToPlaylistIfMissing(
   const toAdd = trackIds.filter((id) => !existing.has(id));
 
   if (toAdd.length === 0) {
-    return { added: 0, skipped: trackIds.length };
+    return { added: 0, skipped: trackIds.length, addedIds: [] as string[] };
   }
 
   for (let i = 0; i < toAdd.length; i += 100) {
@@ -164,7 +164,8 @@ export async function addTracksToPlaylistIfMissing(
 
   return {
     added: toAdd.length,
-    skipped: trackIds.length - toAdd.length
+    skipped: trackIds.length - toAdd.length,
+    addedIds: toAdd,
   };
 }
 

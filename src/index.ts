@@ -1,5 +1,6 @@
 import "dotenv/config";
 import { promises as fs } from "node:fs";
+import { appendFile } from "node:fs/promises";
 import path from "node:path";
 import {
   iterateSavedTracks,
@@ -20,6 +21,18 @@ const REBUILD_GENRE_PROFILE_INTERVAL = process.env
   ? parseInt(process.env.REBUILD_GENRE_PROFILE_INTERVAL)
   : 24;
 
+const CONFIG_PATH = process.env.SPOTIFY_CONFIG_PATH
+  || process.env.CONFIG_PATH
+  || "/etc/norad-api/config/spotify.json";
+
+const CONFIG_DIR = path.dirname(CONFIG_PATH);
+const DATA_DIR = path.join(CONFIG_DIR, ".data");
+
+const SPOTIFY_LOG_PATH = process.env.SPOTIFY_LOG_PATH
+  || path.join(CONFIG_DIR, "spotify-liked-to-playlists-sync.jsonl");
+
+await fs.mkdir(DATA_DIR, { recursive: true });
+
 function extractPlaylistId(raw: string): string | null {
   const s = raw.trim();
 
@@ -39,7 +52,7 @@ function extractPlaylistId(raw: string): string | null {
 }
 
 async function getTargetPlaylistIdsFromConfig(): Promise<string[]> {
-  const configPath = path.resolve(process.env.CONFIG_PATH || "config.json");
+  const configPath = path.resolve(CONFIG_PATH);
   try {
     const buf = await fs.readFile(configPath, "utf8");
     const cfg = JSON.parse(buf);
@@ -133,6 +146,7 @@ async function main() {
   }
 
   const newTrackIdsByPlaylist: Record<string, string[]> = {};
+  const trackMeta = new Map<string, { name: string; artists: string[] }>();
   let newestAddedAt: string | undefined = state.lastProcessedAddedAt;
 
   for await (const item of iterateSavedTracks()) {
@@ -144,6 +158,10 @@ async function main() {
       break;
 
     const track = item.track;
+    trackMeta.set(track.id, {
+      name: track.name,
+      artists: track.artists.map(a => a.name).filter(Boolean),
+    });
     const artistIds = track.artists.map((a) => a.id).filter(Boolean);
     const genres = new Set<string>();
     for (let i = 0; i < artistIds.length; i += 50) {
@@ -173,6 +191,20 @@ async function main() {
     const best =
       pickBestPlaylist(trackGenres, profiles) ?? bestPid ?? targetPlaylists[0];
     (newTrackIdsByPlaylist[best] ??= []).push(track.id);
+
+    await appendFile(
+      SPOTIFY_LOG_PATH,
+      JSON.stringify({
+        ts: new Date().toISOString(),
+        event: "route",
+        trackId: track.id,
+        trackName: track.name,
+        artists: trackMeta.get(track.id)?.artists || [],
+        playlistId: best,
+        genres: trackGenres,
+      }) + "\n",
+    );
+
     console.log(
       `Route "${track.name}" -> ${best} (genres: ${trackGenres.join(", ") || "n/a"})`,
     );
@@ -182,7 +214,34 @@ async function main() {
     if (!ids.length) continue;
     console.log(`Considering ${ids.length} tracks for ${pid} …`);
     const res = await addTracksToPlaylistIfMissing(pid, ids);
-    console.log(`Added ${res.added}, skipped as duplicates ${res.skipped}.`);
+
+    await appendFile(
+      SPOTIFY_LOG_PATH,
+      JSON.stringify({
+        ts: new Date().toISOString(),
+        event: "add_batch",
+        playlistId: pid,
+        attempted: ids.length,
+        added: res?.added ?? null,
+        skipped: res?.skipped ?? null,
+        ids,
+      }) + "\n",
+    );
+
+    for (const id of res.addedIds || []) {
+      const meta = trackMeta.get(id);
+      await appendFile(
+        SPOTIFY_LOG_PATH,
+        JSON.stringify({
+          ts: new Date().toISOString(),
+          event: "added",
+          playlistId: pid,
+          trackId: id,
+          trackName: meta?.name || null,
+          artists: meta?.artists || [],
+        }) + "\n",
+      );
+    }
   }
 
   const updatedState = { ...state };
