@@ -23,13 +23,13 @@ const REBUILD_GENRE_PROFILE_INTERVAL = process.env
 
 const CONFIG_PATH = process.env.SPOTIFY_CONFIG_PATH
   || process.env.CONFIG_PATH
-  || "/etc/norad-api/config/spotify.json";
+  || "/etc/spotify-liked-to-playlists-sync/config.json";
 
 const CONFIG_DIR = path.dirname(CONFIG_PATH);
-const DATA_DIR = path.join(CONFIG_DIR, ".data");
+const DATA_DIR = process.env.DATA_DIR || path.join(CONFIG_DIR, ".data");
 
 const SPOTIFY_LOG_PATH = process.env.SPOTIFY_LOG_PATH
-  || path.join(CONFIG_DIR, "spotify-liked-to-playlists-sync.jsonl");
+  || path.join(DATA_DIR, "spotify-liked-to-playlists-sync.jsonl");
 
 await fs.mkdir(DATA_DIR, { recursive: true });
 
