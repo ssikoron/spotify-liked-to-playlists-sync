@@ -11,7 +11,7 @@ import {
 import { readState, writeState } from "./state";
 import {
   buildPlaylistGenreProfile,
-  pickBestPlaylist,
+  pickPlaylistsWithinDelta,
   scoreTrackAgainstProfile,
 } from "./genreRouter";
 
@@ -20,6 +20,10 @@ const REBUILD_GENRE_PROFILE_INTERVAL = process.env
   .REBUILD_GENRE_PROFILE_INTERVAL
   ? parseInt(process.env.REBUILD_GENRE_PROFILE_INTERVAL)
   : 24;
+
+// MATCH_SCORE_DELTA will be read from config.json (key: matchScoreDelta) by
+// getTargetPlaylistIdsFromConfig(). If missing, default to 0.
+// (We intentionally do not read MATCH_SCORE_DELTA from env anymore.)
 
 const CONFIG_PATH = process.env.SPOTIFY_CONFIG_PATH
   || process.env.CONFIG_PATH
@@ -51,11 +55,12 @@ function extractPlaylistId(raw: string): string | null {
   return null;
 }
 
-async function getTargetPlaylistIdsFromConfig(): Promise<string[]> {
+async function getTargetPlaylistIdsFromConfig(): Promise<{playlistIds: string[]; matchScoreDelta?: number}> {
   const configPath = path.resolve(CONFIG_PATH);
   try {
     const buf = await fs.readFile(configPath, "utf8");
     const cfg = JSON.parse(buf);
+
     const rawList: unknown = cfg?.targetPlaylists ?? cfg?.playlists;
     if (!Array.isArray(rawList)) {
       throw new Error(
@@ -69,7 +74,31 @@ async function getTargetPlaylistIdsFromConfig(): Promise<string[]> {
       if (id) out.push(id);
       else console.warn("Skipping unrecognized playlist value:", v);
     }
-    return Array.from(new Set(out));
+
+    // Read matchScoreDelta from config.json if provided. Supported formats:
+    //  - number (e.g. 0.05 for 5% as fraction, or 5 for 5%)
+    //  - string (e.g. "0.05", "5", or "5%")
+    // Interpretation in pickPlaylistsWithinDelta:
+    //  - value in (0,1] is treated as fraction (0.05 -> 5%)
+    //  - value > 1 is treated as percentage (5 -> 5%)
+    let matchScoreDelta: number | undefined = undefined;
+    if (cfg && typeof cfg.matchScoreDelta !== 'undefined') {
+      const raw = cfg.matchScoreDelta;
+      if (typeof raw === 'number' && Number.isFinite(raw)) {
+        matchScoreDelta = Math.max(0, raw);
+      } else if (typeof raw === 'string') {
+        const s = raw.trim();
+        if (s.endsWith('%')) {
+          const num = parseFloat(s.slice(0, -1));
+          if (!Number.isNaN(num)) matchScoreDelta = Math.max(0, num);
+        } else if (s !== '') {
+          const num = parseFloat(s);
+          if (!Number.isNaN(num)) matchScoreDelta = Math.max(0, num);
+        }
+      }
+    }
+
+    return { playlistIds: Array.from(new Set(out)), matchScoreDelta };
   } catch (e: any) {
     throw new Error(
       `Failed to read playlists from config.json at ${configPath}: ${e?.message ?? e}`,
@@ -112,7 +141,9 @@ async function main() {
     return;
   }
 
-  const targetPlaylists = await getTargetPlaylistIdsFromConfig();
+  const { playlistIds: targetPlaylists, matchScoreDelta } = await getTargetPlaylistIdsFromConfig();
+  const MATCH_SCORE_DELTA = typeof matchScoreDelta === 'number' ? matchScoreDelta : 0;
+
   if (targetPlaylists.length === 0) {
     throw new Error(
       "Provide at least one playlist in config.json under targetPlaylists.",
@@ -179,7 +210,28 @@ async function main() {
       })
       .sort((a, b) => b[1] - a[1]);
 
-    const [bestPid, bestScore] = scores[0] ?? [targetPlaylists[0], 0];
+    const bestPid = scores[0]?.[0] ?? targetPlaylists[0];
+    const bestScore = scores[0]?.[1] ?? 0;
+
+    // If the best score is 0, there's no meaningful match — do not add the track
+    // to any playlist regardless of matchScoreDelta.
+    if (bestScore === 0) {
+      console.log(`Skipping "${track.name}" - no profile match (bestScore=0).`);
+      await appendFile(
+        SPOTIFY_LOG_PATH,
+        JSON.stringify({
+          ts: new Date().toISOString(),
+          event: "route",
+          trackId: track.id,
+          trackName: track.name,
+          artists: trackMeta.get(track.id)?.artists || [],
+          playlistIds: [],
+          genres: trackGenres,
+          reason: "no_profile_match",
+        }) + "\n",
+      );
+      continue;
+    }
 
     // Debugging: Log top 5 genres and per-playlist scores
     const topGenres = trackGenres.slice(0, 5).join(", ") || "n/a";
@@ -188,9 +240,12 @@ async function main() {
     );
     console.log(`Top genres: ${topGenres}`);
 
-    const best =
-      pickBestPlaylist(trackGenres, profiles) ?? bestPid ?? targetPlaylists[0];
-    (newTrackIdsByPlaylist[best] ??= []).push(track.id);
+    const matched = pickPlaylistsWithinDelta(trackGenres, profiles, MATCH_SCORE_DELTA);
+    const matchedPids = matched.length > 0 ? matched : [bestPid];
+
+    for (const pid of matchedPids) {
+      (newTrackIdsByPlaylist[pid] ??= []).push(track.id);
+    }
 
     await appendFile(
       SPOTIFY_LOG_PATH,
@@ -200,13 +255,13 @@ async function main() {
         trackId: track.id,
         trackName: track.name,
         artists: trackMeta.get(track.id)?.artists || [],
-        playlistId: best,
+        playlistIds: matchedPids,
         genres: trackGenres,
       }) + "\n",
     );
 
     console.log(
-      `Route "${track.name}" -> ${best} (genres: ${trackGenres.join(", ") || "n/a"})`,
+      `Route "${track.name}" -> ${matchedPids.join(",")} (genres: ${trackGenres.join(", ") || "n/a"})`,
     );
   }
 
